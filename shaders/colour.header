@@ -1,0 +1,86 @@
+#version 330
+
+#include <math.header>
+
+// Convert RGB to HSV where each component ranges from 0 to 1
+// http://lolengine.net/blog/2013/07/27/rgb-to-hsv-in-glsl
+vec3 RGBtoHSV(vec3 colourRGB)
+{
+  vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+  vec4 p = colourRGB.g < colourRGB.b ? vec4(colourRGB.bg, K.wz) : vec4(colourRGB.gb, K.xy);
+  vec4 q = colourRGB.r < p.x ? vec4(p.xyw, colourRGB.r) : vec4(colourRGB.r, p.yzx);
+
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+
+vec3 HSVtoRGB(vec3 colourHSV)
+{
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(colourHSV.xxx + K.xyz) * 6.0 - K.www);
+  return colourHSV.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), colourHSV.y);
+}
+
+// Convert RGB to HSL where each component ranges from 0 to 1
+vec3 RGBtoHSL(vec3 colourRGB)
+{
+  float minc  = min3(colourRGB.r, colourRGB.g, colourRGB.b);
+  float maxc  = max3(colourRGB.r, colourRGB.g, colourRGB.b);
+  float delta = maxc - minc;
+
+  float lum = (minc + maxc) * 0.5;
+  float sat = 0.0;
+  float hue = 0.0;
+
+  if (lum > 0.0 && lum < 1.0) {
+    float mul = (lum < 0.5) ? lum : (1.0 - lum);
+    sat = delta / (mul * 2.0);
+  }
+
+  vec3 masks = vec3(
+    ((maxc == colourRGB.r) && (maxc != colourRGB.g)) ? 1.0 : 0.0,
+    ((maxc == colourRGB.g) && (maxc != colourRGB.b)) ? 1.0 : 0.0,
+    ((maxc == colourRGB.b) && (maxc != colourRGB.r)) ? 1.0 : 0.0
+  );
+
+  vec3 adds = vec3(
+    ((colourRGB.g - colourRGB.b) / delta),
+    2.0 + ((colourRGB.b - colourRGB.r) / delta),
+    4.0 + ((colourRGB.r - colourRGB.g) / delta)
+  );
+
+  float deltaGtz = (delta > 0.0) ? 1.0 : 0.0;
+
+  hue += dot(adds, masks);
+  hue *= deltaGtz;
+  hue /= 6.0;
+
+  if (hue < 0.0) hue += 1.0;
+
+  return vec3(hue, sat, lum);
+}
+
+// Convert RGB to LMS
+// http://en.wikipedia.org/wiki/LMS_color_space
+vec3 RGBtoLMS(vec3 colourRGB)
+{
+	// RGB to LMS matrix conversion
+	float l = (17.8824f * colourRGB.r) + (43.5161f * colourRGB.g) + (4.11935f * colourRGB.b);
+	float m = (3.45565f * colourRGB.r) + (27.1554f * colourRGB.g) + (3.86714f * colourRGB.b);
+	float s = (0.0299566f * colourRGB.r) + (0.184309f * colourRGB.g) + (1.46709f * colourRGB.b);
+
+  return vec3(l, m, s);
+}
+
+// Convert LMS to RGB
+// http://en.wikipedia.org/wiki/LMS_color_space
+vec3 LMStoRGB(float l, float m, float s)
+{
+	// LMS to RGB matrix conversion
+	float r = (0.0809444479f * l) + (-0.130504409f * m) + (0.116721066f * s);
+	float g = (-0.0102485335f * l) + (0.0540193266f * m) + (-0.113614708f * s);
+	float b = (-0.000365296938f * l) + (-0.00412161469f * m) + (0.693511405f * s);
+
+  return vec3(r, g, b);
+}
