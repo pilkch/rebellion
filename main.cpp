@@ -185,7 +185,9 @@ cApplication::cApplication() :
   pWindow(nullptr),
   pContext(nullptr),
 
-  selectedObject(-1)
+  selectedObject(-1),
+
+  ai(navigationMesh)
 {
   // Set our main thread
   spitfire::util::SetMainThread();
@@ -222,10 +224,16 @@ void cApplication::CreateText()
   lines.push_back(spitfire::string_t(TEXT("Camera: ")) + spitfire::string::ToString(camera.GetPosition().x) + TEXT(", ") + spitfire::string::ToString(camera.GetPosition().y) + TEXT(", ") + spitfire::string::ToString(camera.GetPosition().z));
   if (selectedObject >= 0) {
     const spitfire::math::cVec3 position = scene.objects.positions[selectedObject];
-    const spitfire::math::cVec3 goal = scene.objects.goalPositions[selectedObject];
-    const float fDistance = (goal - position).GetLength();
     lines.push_back(spitfire::string_t(TEXT("Object: ")) + spitfire::string::ToString(position.x) + TEXT(", ") + spitfire::string::ToString(position.y) + TEXT(", ") + spitfire::string::ToString(position.z));
-    lines.push_back(spitfire::string_t(TEXT("Object distance: ")) + spitfire::string::ToString(fDistance));
+    
+    auto iter = scene.objects.aiagentids.find(selectedObject);
+    if (iter != scene.objects.aiagentids.end()) {
+      spitfire::math::cVec3 goal;
+      if (ai.GetAgentGoalPosition(iter->second, goal)) {
+        const float fDistance = (goal - position).GetLength();
+        lines.push_back(spitfire::string_t(TEXT("Object distance: ")) + spitfire::string::ToString(fDistance));
+      }
+    }
   }
   lines.push_back(TEXT(""));
 
@@ -446,23 +454,26 @@ void cApplication::CreateScene()
     scene.objects.positions.push_back(randomPosition);
 
     const spitfire::math::cVec3 rotationDegrees(rand.randomf(-180.0f, 180.0f), 0.0f, 0.0f);
+    const spitfire::math::cQuaternion rotation(spitfire::math::cMat4::RotationMatrix(rotationDegrees).GetRotation());
 
-    scene.objects.rotations.push_back(spitfire::math::cMat4::RotationMatrix(rotationDegrees).GetRotation());
+    scene.objects.rotations.push_back(rotation);
 
     const spitfire::math::cVec2 g(rand.randomZeroToOnef() * 100.0f, rand.randomZeroToOnef() * 100.0f);
     const spitfire::math::cVec3 randomGoalPosition(g.x, heightMapScale.y * heightMapData.GetHeight(g.x / heightMapScale.x, g.y / heightMapScale.z), g.y);
 
-    spitfire::math::cVec3 goalPosition = randomPosition;
-
     switch (rand.random(3)) {
       case 0: {
         scene.objects.types.push_back(TYPE::SOLDIER);
-        goalPosition = randomGoalPosition;
+
+        // Soldiers have AI agents
+        const aiagentid_t id = ai.AddAgent(randomPosition, rotation);
+        ai.SetAgentGoalPosition(id, randomGoalPosition);
+
+        scene.objects.aiagentids[i] = id;
         break;
       }
       case 1: {
         scene.objects.types.push_back(TYPE::BULLET);
-        goalPosition = randomGoalPosition;
         break;
       }
       case 2: {
@@ -470,8 +481,6 @@ void cApplication::CreateScene()
         break;
       }
     }
-
-    scene.objects.goalPositions.push_back(goalPosition);
   }
 }
 
@@ -1045,7 +1054,10 @@ void cApplication::HandleSelectionAndOrders(int mouseX, int mouseY)
     // Add a ray
     AddRayCastLine(spitfire::math::cLine3(origin, point));
 
-    if (selectedObject != -1) scene.objects.goalPositions[selectedObject] = point;
+    if (selectedObject != -1) {
+      auto iter = scene.objects.aiagentids.find(selectedObject);
+      if (iter != scene.objects.aiagentids.end()) ai.SetAgentGoalPosition(iter->second, point);
+    }
 
     CreateRayCastLineStaticVertexBuffer();
   }
@@ -1239,9 +1251,9 @@ void cApplication::CreateDebugTargetTraceLinesStaticVertexBuffer()
 
   opengl::cGeometryBuilder_v3_n3 builder(*pGeometryDataDebugTargetTraceLinesPtr);
 
-  const size_t n = scene.objects.goalPositions.size();
-  for (size_t i = 0; i < n; i++) {
-    AddLineToBuilder(builder, spitfire::math::cLine3(scene.objects.positions[i], scene.objects.goalPositions[i]));
+  for (auto iter : scene.objects.aiagentids) {
+    spitfire::math::cVec3 goalPosition;
+    if (ai.GetAgentGoalPosition(iter.second, goalPosition)) AddLineToBuilder(builder, spitfire::math::cLine3(scene.objects.positions[iter.first], goalPosition));
   }
 
   // Recreate our vertex buffer object
@@ -1706,26 +1718,23 @@ void cApplication::Run()
       if (bIsPhysicsRunning) {
         currentSimulationTime++;
 
-        // Update objects
-        const float fSpeed = 0.1f;
-        const size_t n = scene.objects.goalPositions.size();
-        for (size_t i = 0; i < n; i++) {
-          const float fDistance = spitfire::math::cVec3(scene.objects.goalPositions[i] - scene.objects.positions[i]).GetLength();
-          if (fDistance < 0.1f) {
-            // Close enough to just move the object to the target position
-            scene.objects.positions[i] = scene.objects.goalPositions[i];
-          } else if (fDistance < 6.0f) {
-            // Ease into the target position
-            float fEasing = 0.1f;
-            const spitfire::math::cVec3 direction = (scene.objects.goalPositions[i] - scene.objects.positions[i]).GetNormalised();
-            scene.objects.positions[i] += std::min(fSpeed, (fEasing * fDistance)) * direction;
-          } else {
-            // Move at a constant speed to the target position
-            const spitfire::math::cVec3 direction = (scene.objects.goalPositions[i] - scene.objects.positions[i]).GetNormalised();
-            scene.objects.positions[i] += fSpeed * direction;
-          }
+        // Tell the AI about our current object positions and rotations
+        for (auto iter : scene.objects.aiagentids) {
+          ai.SetAgentPositionAndRotation(iter.second, scene.objects.positions[iter.first], scene.objects.rotations[iter.first]);
+        }
 
-          // Keep our object on the heightmap
+        // Update our systems
+        // Update AI
+        ai.Update(currentSimulationTime);
+
+        // Get the new object positions and rotations
+        for (auto iter : scene.objects.aiagentids) {
+          scene.objects.positions[iter.first] = ai.GetAgentPosition(iter.second);
+        }
+
+        // Keep our object on the heightmap
+        const size_t n = scene.objects.positions.size();
+        for (size_t i = 0; i < n; i++) {
           scene.objects.positions[i].y = heightMapScale.y * heightMapData.GetHeight(scene.objects.positions[i].x / heightMapScale.x, scene.objects.positions[i].z / heightMapScale.z);
         }
       }

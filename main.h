@@ -50,6 +50,7 @@
 #include <libopenglmm/cWindow.h>
 
 // Application headers
+#include "ai.h"
 #include "astar.h"
 #include "main.h"
 #include "navigation.h"
@@ -80,7 +81,7 @@ struct Scene {
     std::vector<spitfire::math::cVec3> positions;
     std::vector<spitfire::math::cQuaternion> rotations;
     std::vector<TYPE> types;
-    std::vector<spitfire::math::cVec3> goalPositions;
+    std::map<size_t, aiagentid_t> aiagentids;
   } objects;
 };
 
@@ -217,6 +218,7 @@ private:
   NavigationMesh navigationMesh;
 
   Scene scene;
+  AISystem ai;
 
   opengl::cStaticVertexBufferObject staticVertexBufferDebugNavigationMesh;
   opengl::cStaticVertexBufferObject staticVertexBufferDebugNavigationMeshWayPointLines;

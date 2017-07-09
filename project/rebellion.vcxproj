@@ -119,6 +119,7 @@
     <ClCompile Include="..\..\library\src\spitfire\util\string.cpp" />
     <ClCompile Include="..\..\library\src\spitfire\util\thread.cpp" />
     <ClCompile Include="..\..\library\src\spitfire\util\timer.cpp" />
+    <ClCompile Include="..\ai.cpp" />
     <ClCompile Include="..\heightmap.cpp" />
     <ClCompile Include="..\main.cpp" />
     <ClCompile Include="..\navigation.cpp" />
@@ -182,6 +183,7 @@
     <None Include="..\shaders\tronglow.frag" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\ai.h" />
     <ClInclude Include="..\astar.h" />
     <ClInclude Include="..\heightmap.h" />
     <ClInclude Include="..\main.h" />
