@@ -77,7 +77,7 @@ struct Scene {
   spitfire::math::cColour skyColour;
 
   struct Objects {
-    std::vector<spitfire::math::cMat4> translations;
+    std::vector<spitfire::math::cVec3> positions;
     std::vector<spitfire::math::cQuaternion> rotations;
     std::vector<TYPE> types;
   } objects;

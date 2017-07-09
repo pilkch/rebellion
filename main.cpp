@@ -439,11 +439,10 @@ void cApplication::CreateScene()
   scene.skyColour = cornFlowerBlue;
 
   for (size_t i = 0; i < 100; i++) {
-    const float x = spitfire::math::randomZeroToOnef() * 100.0f;
-    const float z = spitfire::math::randomZeroToOnef() * 100.0f;
-    const spitfire::math::cVec3 position(x, heightMapScale.y * heightMapData.GetHeight(x / heightMapScale.x, z / heightMapScale.z), z);
+    const spitfire::math::cVec2 p(rand.randomZeroToOnef() * 100.0f, rand.randomZeroToOnef() * 100.0f);
+    const spitfire::math::cVec3 randomPosition(p.x, heightMapScale.y * heightMapData.GetHeight(p.x / heightMapScale.x, p.y / heightMapScale.z), p.y);
 
-    scene.objects.translations.push_back(spitfire::math::cMat4::TranslationMatrix(position));
+    scene.objects.positions.push_back(randomPosition);
 
     const spitfire::math::cVec3 rotationDegrees(spitfire::math::randomf(-180.0f, 180.0f), 0.0f, 0.0f);
 
@@ -865,10 +864,10 @@ ssize_t cApplication::CollideRayWithObjects(const spitfire::math::cRay3& ray) co
   const float fRadius = 1.0f;
   float fDepth = 0.0f;
 
-  const size_t n = scene.objects.translations.size();
+  const size_t n = scene.objects.positions.size();
   for (size_t i = 0; i < n; i++) {
     spitfire::math::cSphere sphere;
-    sphere.SetPosition(scene.objects.translations[i].GetTranslation());
+    sphere.SetPosition(scene.objects.positions[i]);
     sphere.SetRadius(fRadius);
 
     if (ray.CollideWithSphere(sphere, fDepth)) {
@@ -1183,10 +1182,11 @@ void cApplication::RenderFrame()
 
       const size_t n = scene.objects.types.size();
       for (size_t i = 0; i < n; i++) {
+        const spitfire::math::cMat4 matTranslation(spitfire::math::cMat4::TranslationMatrix(scene.objects.positions[i]));
         if (selectedObject == ssize_t(i)) {
           pContext->SetShaderConstant("colour", orange);
           pContext->BindStaticVertexBufferObject(staticVertexBufferObjectCube0);
-          pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * scene.objects.translations[i] * scene.objects.rotations[i].GetMatrix());
+          pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * matTranslation * scene.objects.rotations[i].GetMatrix());
           pContext->DrawStaticVertexBufferObjectTriangles(staticVertexBufferObjectCube0);
           pContext->UnBindStaticVertexBufferObject(staticVertexBufferObjectCube0);
         } else {
@@ -1194,7 +1194,7 @@ void cApplication::RenderFrame()
             case TYPE::SOLDIER: {
               pContext->SetShaderConstant("colour", red);
               pContext->BindStaticVertexBufferObject(staticVertexBufferObjectCube0);
-              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * scene.objects.translations[i] * scene.objects.rotations[i].GetMatrix());
+              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * matTranslation * scene.objects.rotations[i].GetMatrix());
               pContext->DrawStaticVertexBufferObjectTriangles(staticVertexBufferObjectCube0);
               pContext->UnBindStaticVertexBufferObject(staticVertexBufferObjectCube0);
               break;
@@ -1202,14 +1202,14 @@ void cApplication::RenderFrame()
             case TYPE::BULLET: {
               pContext->SetShaderConstant("colour", white);
               pContext->BindStaticVertexBufferObject(staticVertexBufferObjectSphere0);
-              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * scene.objects.translations[i] * scene.objects.rotations[i].GetMatrix());
+              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * matTranslation * scene.objects.rotations[i].GetMatrix());
               pContext->DrawStaticVertexBufferObjectTriangles(staticVertexBufferObjectSphere0);
               pContext->UnBindStaticVertexBufferObject(staticVertexBufferObjectSphere0);
             }
             case TYPE::TREE: {
               pContext->SetShaderConstant("colour", blue);
               pContext->BindStaticVertexBufferObject(staticVertexBufferObjectGear0);
-              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * scene.objects.translations[i] * scene.objects.rotations[i].GetMatrix());
+              pContext->SetShaderProjectionAndModelViewMatrices(matProjection, matView * matTranslation * scene.objects.rotations[i].GetMatrix());
               pContext->DrawStaticVertexBufferObjectTriangles(staticVertexBufferObjectGear0);
               pContext->UnBindStaticVertexBufferObject(staticVertexBufferObjectGear0);
             }
@@ -1540,7 +1540,7 @@ int main(int argc, char** argv)
 {
   bool bIsSuccess = true;
 
-  RedirectStandardOutputToOutputWindow();
+  util::RedirectStandardOutputToOutputWindow();
 
   {
     cApplication application;
