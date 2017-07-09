@@ -55,6 +55,11 @@
 // Application headers
 #include "util.h"
 
+namespace util
+{
+  void RedirectStandardOutputToOutputWindow();
+}
+
 class cFreeLookCamera
 {
 public:
