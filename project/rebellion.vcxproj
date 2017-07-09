@@ -119,6 +119,7 @@
     <ClCompile Include="..\..\library\src\spitfire\util\string.cpp" />
     <ClCompile Include="..\..\library\src\spitfire\util\thread.cpp" />
     <ClCompile Include="..\..\library\src\spitfire\util\timer.cpp" />
+    <ClCompile Include="..\heightmap.cpp" />
     <ClCompile Include="..\main.cpp" />
     <ClCompile Include="..\navigation.cpp" />
     <ClCompile Include="..\util.cpp" />
@@ -182,6 +183,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\astar.h" />
+    <ClInclude Include="..\heightmap.h" />
     <ClInclude Include="..\main.h" />
     <ClInclude Include="..\navigation.h" />
     <ClInclude Include="..\util.h" />
