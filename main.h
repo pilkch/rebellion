@@ -80,6 +80,7 @@ struct Scene {
     std::vector<spitfire::math::cVec3> positions;
     std::vector<spitfire::math::cQuaternion> rotations;
     std::vector<TYPE> types;
+    std::vector<spitfire::math::cVec3> goalPositions;
   } objects;
 };
 
@@ -149,9 +150,16 @@ private:
   void HandleSelectionAndOrders(int mouseX, int mouseY);
 
   void AddRayCastLine(const spitfire::math::cLine3& line);
-  void DebugAddOctreeLines();
-  void DebugAddOctreeLinesRecursive(const spitfire::math::cOctree<spitfire::math::cAABB3>& node);
+  void DebugAddRayCastBox(const spitfire::math::cAABB3& aabb);
+
+  void DebugAddQuadtreeLines();
+  void DebugAddQuadtreeLinesRecursive(const spitfire::math::cQuadtree<spitfire::math::cAABB2>& node);
   void CreateRayCastLineStaticVertexBuffer();
+
+  void AddGreenDebugLine(const spitfire::math::cLine3& line);
+  void CreateGreenDebugLinesStaticVertexBuffer();
+
+  void CreateDebugTargetTraceLinesStaticVertexBuffer();
 
   float fFPS;
 
@@ -212,10 +220,11 @@ private:
 
   opengl::cStaticVertexBufferObject staticVertexBufferDebugNavigationMesh;
   opengl::cStaticVertexBufferObject staticVertexBufferDebugNavigationMeshWayPointLines;
+  opengl::cStaticVertexBufferObject staticVertexBufferGreenDebugTraceLines;
+  opengl::cStaticVertexBufferObject staticVertexBufferDebugTargetTraceLines;
 
   ssize_t selectedObject;
 
-  std::vector<spitfire::math::cLine3> rayCastLines;
   opengl::cStaticVertexBufferObject staticVertexBufferObjectRayCasts;
 };
 

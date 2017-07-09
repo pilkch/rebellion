@@ -26,14 +26,17 @@
 #include <spitfire/math/cVec3.h>
 #include <spitfire/math/cVec4.h>
 #include <spitfire/math/cMat4.h>
-#include <spitfire/math/cOctree.h>
+#include <spitfire/math/cQuadtree.h>
 #include <spitfire/math/cQuaternion.h>
 #include <spitfire/math/cColour.h>
 #include <spitfire/math/geometry.h>
 
 #include <spitfire/storage/file.h>
 #include <spitfire/storage/filesystem.h>
+
 #include <spitfire/util/log.h>
+#include <spitfire/util/timer.h>
+#include <spitfire/util/thread.h>
 
 // Breathe headers
 #include <breathe/render/model/cFileFormatOBJ.h>
@@ -75,9 +78,9 @@ spitfire::math::cVec3 glmUnProject(
 #if 1
   tmp.x = tmp.x * 2.0f - 1.0f;
   tmp.y = tmp.y * 2.0f - 1.0f;
-#		else
+#else
   tmp = tmp * 2.0f - 1.0f;
-#		endif
+#endif
 
   spitfire::math::cVec4 obj = Inverse * tmp;
   obj /= obj.w;
@@ -111,59 +114,52 @@ cHeightmapData heightMapData;
 
 spitfire::math::cVec3 heightMapScale;
 
-std::unique_ptr<spitfire::math::cOctree<spitfire::math::cAABB3>> octree;
+std::unique_ptr<spitfire::math::cQuadtree<spitfire::math::cAABB2>> quadtree;
 
-void DebugPrintOctreeRecursive(const spitfire::math::cOctree<spitfire::math::cAABB3>& _octree, const std::string& indentation)
+void DebugPrintQuadtreeRecursive(const spitfire::math::cQuadtree<spitfire::math::cAABB2>& _quadtree, const std::string& indentation)
 {
-  const spitfire::math::cVec3 min = _octree.GetMin();
-  const spitfire::math::cVec3 max = _octree.GetMax();
+  const spitfire::math::cVec2 min = _quadtree.GetMin();
+  const spitfire::math::cVec2 max = _quadtree.GetMax();
 
   std::cout << indentation << "Node " << max.x - min.x << std::endl;
 
-  if (_octree.GetData() != nullptr) {
+  if (_quadtree.GetData() != nullptr) {
     std::cout << indentation << "  Data" << std::endl;
 
-    assert(_octree.GetChild(0) == nullptr);
-    assert(_octree.GetChild(1) == nullptr);
-    assert(_octree.GetChild(2) == nullptr);
-    assert(_octree.GetChild(3) == nullptr);
-    assert(_octree.GetChild(4) == nullptr);
-    assert(_octree.GetChild(5) == nullptr);
-    assert(_octree.GetChild(6) == nullptr);
-    assert(_octree.GetChild(7) == nullptr);
+    assert(_quadtree.GetChild(0) == nullptr);
+    assert(_quadtree.GetChild(1) == nullptr);
+    assert(_quadtree.GetChild(2) == nullptr);
+    assert(_quadtree.GetChild(3) == nullptr);
   }
 
-  for (size_t i = 0; i < 8; i++) {
-    const spitfire::math::cOctree<spitfire::math::cAABB3>* child = _octree.GetChild(i);
+  for (size_t i = 0; i < 4; i++) {
+    const spitfire::math::cQuadtree<spitfire::math::cAABB2>* child = _quadtree.GetChild(i);
     if (child != nullptr) {
-      DebugPrintOctreeRecursive(*child, indentation + "  ");
+      DebugPrintQuadtreeRecursive(*child, indentation + "  ");
     }
   }
 }
 
-void BuildOctree()
+void BuildQuadtree()
 {
-  // TODO: Get the real height based on the values in the heightmap
-  const float fLowestPoint = heightMapData.GetLowestPoint();
-  const float fHighestPoint = heightMapData.GetHighestPoint();
-
-  const spitfire::math::cVec3 halfDimension = 0.5f * heightMapScale * spitfire::math::cVec3(heightMapData.GetWidth(), fHighestPoint - fLowestPoint, heightMapData.GetDepth());
-  const spitfire::math::cVec3 origin = halfDimension;
-  octree.reset(new spitfire::math::cOctree<spitfire::math::cAABB3>(origin, halfDimension));
+  const spitfire::math::cVec2 halfDimension = 0.5f * heightMapScale.GetXZ() * spitfire::math::cVec2(heightMapData.GetWidth(), heightMapData.GetDepth());
+  const spitfire::math::cVec2 origin = halfDimension;
+  quadtree.reset(new spitfire::math::cQuadtree<spitfire::math::cAABB2>(origin, halfDimension));
 
   const size_t width = heightMapData.GetWidth();
   const size_t depth = heightMapData.GetDepth();
-  for (size_t z = 0; z < depth; z++) {
-    for (size_t x = 0; x < width; x++) {
-      spitfire::math::cAABB3* aabb = new spitfire::math::cAABB3;
-      const spitfire::math::cVec3 point0 = heightMapScale * spitfire::math::cVec3(float(x), 0.0f, float(z));
-      const spitfire::math::cVec3 point1 = heightMapScale * spitfire::math::cVec3(float(x + 1), 1.0f, float(z + 1));
+  const size_t skip = 2;
+  for (size_t z = 0; z < depth; z += skip) {
+    for (size_t x = 0; x < width; x += skip) {
+      spitfire::math::cAABB2* aabb = new spitfire::math::cAABB2;
+      const spitfire::math::cVec2 point0 = heightMapScale.GetXZ() * spitfire::math::cVec2(float(x), float(z));
+      const spitfire::math::cVec2 point1 = heightMapScale.GetXZ() * spitfire::math::cVec2(float(x + skip), float(z + skip));
       aabb->SetExtents(point0, point1);
-      octree->insert(aabb);
+      quadtree->insert(aabb);
     }
   }
 
-  DebugPrintOctreeRecursive(*octree, "");
+  DebugPrintQuadtreeRecursive(*quadtree, "");
 }
 
 
@@ -225,8 +221,11 @@ void cApplication::CreateText()
   lines.push_back(spitfire::string_t(TEXT("Selected: ")) + spitfire::string::ToString(selectedObject));
   lines.push_back(spitfire::string_t(TEXT("Camera: ")) + spitfire::string::ToString(camera.GetPosition().x) + TEXT(", ") + spitfire::string::ToString(camera.GetPosition().y) + TEXT(", ") + spitfire::string::ToString(camera.GetPosition().z));
   if (selectedObject >= 0) {
-    const spitfire::math::cVec3 position = scene.objects.translations[selectedObject].GetTranslation();
+    const spitfire::math::cVec3 position = scene.objects.positions[selectedObject];
+    const spitfire::math::cVec3 goal = scene.objects.goalPositions[selectedObject];
+    const float fDistance = (goal - position).GetLength();
     lines.push_back(spitfire::string_t(TEXT("Object: ")) + spitfire::string::ToString(position.x) + TEXT(", ") + spitfire::string::ToString(position.y) + TEXT(", ") + spitfire::string::ToString(position.z));
+    lines.push_back(spitfire::string_t(TEXT("Object distance: ")) + spitfire::string::ToString(fDistance));
   }
   lines.push_back(TEXT(""));
 
@@ -428,9 +427,9 @@ void cApplication::CreateScene()
   pContext->CreateStaticVertexBufferObject(staticVertexBufferObjectHeightmapTriangles);
   CreateHeightmapTriangles(staticVertexBufferObjectHeightmapTriangles, heightMapData, heightMapScale);
 
-  BuildOctree();
+  BuildQuadtree();
 
-  DebugAddOctreeLines();
+  DebugAddQuadtreeLines();
 
   // Use Cornflower blue as the sky colour
   // http://en.wikipedia.org/wiki/Cornflower_blue
@@ -438,23 +437,32 @@ void cApplication::CreateScene()
 
   scene.skyColour = cornFlowerBlue;
 
+  spitfire::math::cRand rand;
+
   for (size_t i = 0; i < 100; i++) {
     const spitfire::math::cVec2 p(rand.randomZeroToOnef() * 100.0f, rand.randomZeroToOnef() * 100.0f);
     const spitfire::math::cVec3 randomPosition(p.x, heightMapScale.y * heightMapData.GetHeight(p.x / heightMapScale.x, p.y / heightMapScale.z), p.y);
 
     scene.objects.positions.push_back(randomPosition);
 
-    const spitfire::math::cVec3 rotationDegrees(spitfire::math::randomf(-180.0f, 180.0f), 0.0f, 0.0f);
+    const spitfire::math::cVec3 rotationDegrees(rand.randomf(-180.0f, 180.0f), 0.0f, 0.0f);
 
     scene.objects.rotations.push_back(spitfire::math::cMat4::RotationMatrix(rotationDegrees).GetRotation());
 
-    switch (spitfire::math::random(3)) {
+    const spitfire::math::cVec2 g(rand.randomZeroToOnef() * 100.0f, rand.randomZeroToOnef() * 100.0f);
+    const spitfire::math::cVec3 randomGoalPosition(g.x, heightMapScale.y * heightMapData.GetHeight(g.x / heightMapScale.x, g.y / heightMapScale.z), g.y);
+
+    spitfire::math::cVec3 goalPosition = randomPosition;
+
+    switch (rand.random(3)) {
       case 0: {
         scene.objects.types.push_back(TYPE::SOLDIER);
+        goalPosition = randomGoalPosition;
         break;
       }
       case 1: {
         scene.objects.types.push_back(TYPE::BULLET);
+        goalPosition = randomGoalPosition;
         break;
       }
       case 2: {
@@ -462,6 +470,8 @@ void cApplication::CreateScene()
         break;
       }
     }
+
+    scene.objects.goalPositions.push_back(goalPosition);
   }
 }
 
@@ -481,11 +491,13 @@ void cApplication::CreateNavigationMesh()
   const size_t width = 10;
   const size_t height = 10;
 
+  spitfire::math::cRand rand;
+
   // Create a grid of node positions and connections
   for (size_t z = 0; z < height; z++) {
     for (size_t x = 0; x < width; x++) {
-      const float fJitteredX = (fScale * float(x + 1)) + spitfire::math::randomMinusOneToPlusOnef() * 4.0f;
-      const float fJitteredZ = (fScale * float(z + 1)) + spitfire::math::randomMinusOneToPlusOnef() * 4.0f;
+      const float fJitteredX = (fScale * float(x + 1)) + rand.randomMinusOneToPlusOnef() * 4.0f;
+      const float fJitteredZ = (fScale * float(z + 1)) + rand.randomMinusOneToPlusOnef() * 4.0f;
       const float fY = (heightMapScale.y * heightMapData.GetHeight(fJitteredX / heightMapScale.x, fJitteredZ / heightMapScale.z)) + fOffsetY;
       const spitfire::math::cVec3 position(fJitteredX, fY, fJitteredZ);
       nodePositions.push_back(position);
@@ -739,6 +751,8 @@ void cApplication::Destroy()
 {
   ASSERT(pContext != nullptr);
 
+  pContext->DestroyStaticVertexBufferObject(staticVertexBufferDebugTargetTraceLines);
+  pContext->DestroyStaticVertexBufferObject(staticVertexBufferGreenDebugTraceLines);
   pContext->DestroyStaticVertexBufferObject(staticVertexBufferDebugNavigationMesh);
   pContext->DestroyStaticVertexBufferObject(staticVertexBufferDebugNavigationMeshWayPointLines);
 
@@ -878,49 +892,112 @@ ssize_t cApplication::CollideRayWithObjects(const spitfire::math::cRay3& ray) co
   return -1;
 }
 
-float cApplication::CollideRayWithHeightmap(const spitfire::math::cRay3& ray) const
+float cApplication::CollideRayWithHeightmap(const spitfire::math::cRay3& _ray) const
 {
-  assert(octree != nullptr);
+  assert(quadtree != nullptr);
 
-  std::vector<const spitfire::math::cOctree<spitfire::math::cAABB3>*> nodes;
-  octree->CollideRay(ray, nodes);
+  spitfire::math::cRay2 ray;
+  ray.SetOriginAndDirection(_ray.GetOrigin().GetXZ(), _ray.GetDirection().GetXZ());
 
-  const float fGridSize = 0.1f;
+  std::vector<const spitfire::math::cQuadtree<spitfire::math::cAABB2>*> nodes;
+  quadtree->CollideRay(ray, nodes);
+  std::cout << "Potential collision with " << nodes.size() << " nodes" << std::endl;
+
+  // Sort the nodes based on how far they are from the start of the ray
+  std::sort(nodes.begin(), nodes.end(), [ray](const spitfire::math::cQuadtree<spitfire::math::cAABB2>* a, const spitfire::math::cQuadtree<spitfire::math::cAABB2>* b) {
+    return spitfire::math::cVec2(ray.GetOrigin() - b->GetOrigin()).GetSquaredLength() > spitfire::math::cVec2(ray.GetOrigin() - a->GetOrigin()).GetSquaredLength();
+  });
+
+  const float fGridSize = 1.0f;
+
+  cApplication* pThis = (cApplication*)this;
+
+  const spitfire::durationms_t start = spitfire::util::GetTimeMS();
+
+  size_t i = 0;
 
   for (auto pNode : nodes) {
-    const spitfire::math::cAABB3* data = pNode->GetData();
+
+    const spitfire::math::cAABB2* data = pNode->GetData();
     assert(data != nullptr);
 
-    const spitfire::math::cVec3 nodeMin = data->GetMin();
-    const spitfire::math::cVec3 nodeMax = data->GetMax();
-    const spitfire::math::cVec3 nodeDimensions(nodeMax - nodeMin);
+    const spitfire::math::cVec2 nodeMin = data->GetMin();
+    const spitfire::math::cVec2 nodeMax = data->GetMax();
+    const spitfire::math::cVec2 nodeDimensions(nodeMax - nodeMin);
     const size_t nGridWidth = nodeDimensions.x / fGridSize;
-    const size_t nGridDepth = nodeDimensions.z / fGridSize;
-    for (size_t z = 0; z < nGridDepth; ++z) {
-      for (size_t x = 0; x < nGridWidth; ++x) {
-        const float fX0 = nodeMin.x + (x * fGridSize);
-        const float fZ0 = nodeMin.z + (z * fGridSize);
-        const spitfire::math::cVec3 point0(fX0, heightMapScale.y * heightMapData.GetHeight(fX0 / heightMapScale.x, fZ0 / heightMapScale.z), fZ0);
+    const size_t nGridDepth = nodeDimensions.y / fGridSize;
 
-        const float fX1 = nodeMin.x + ((x + 1) * fGridSize);
-        const float fZ1 = nodeMin.z + (z * fGridSize);
-        const spitfire::math::cVec3 point1(fX1, heightMapScale.y * heightMapData.GetHeight(fX1 / heightMapScale.x, fZ1 / heightMapScale.z), fZ1);
+    spitfire::math::cAABB3 aabb3D;
+    aabb3D.SetExtents(spitfire::math::cVec3(nodeMin.x, 0.0f, nodeMin.y), spitfire::math::cVec3(nodeMax.x, 10.0f, nodeMax.y));
 
-        const float fX2 = nodeMin.x + (x * fGridSize);
-        const float fZ2 = nodeMin.z + ((z + 1) * fGridSize);
-        const spitfire::math::cVec3 point2(fX2, heightMapScale.y * heightMapData.GetHeight(fX2 / heightMapScale.x, fZ2 / heightMapScale.z), fZ2);
+    //std::cout << "Colliding with node " << i << std::endl;
+    const float fHalfGridSize = 0.5f * fGridSize;
 
-        const float fX3 = nodeMin.x + ((x + 1) * fGridSize);
-        const float fZ3 = nodeMin.z + ((z + 1) * fGridSize);
-        const spitfire::math::cVec3 point3(fX3, heightMapScale.y * heightMapData.GetHeight(fX3 / heightMapScale.x, fZ3 / heightMapScale.z), fZ3);
+    spitfire::math::cVec3 point(_ray.GetOrigin() + (spitfire::math::cEPSILON * _ray.GetDirection()));
 
-        float fDepth = 0.0f;
-        if (ray.CollideWithTriangle(point0, point1, point2, fDepth) || ray.CollideWithTriangle(point1, point2, point3, fDepth)) {
-          return fDepth;
-        }
+    // If the origin of the ray is not already already within this node then find a point on the closest face and iterate from there
+    if (!point.IsWithinBounds(aabb3D.GetMin(), aabb3D.GetMax())) {
+      float fDepth = -1.0f;
+      if (!_ray.CollideWithAABB(aabb3D, fDepth)) {
+        continue;
       }
+
+      point = _ray.GetOrigin() + ((fDepth + spitfire::math::cEPSILON) * _ray.GetDirection());
     }
+
+    pThis->DebugAddRayCastBox(aabb3D);
+
+    size_t x = 0;
+
+    float fDepth = -1.0f;
+    while (point.IsWithinBounds(aabb3D.GetMin(), aabb3D.GetMax())) {
+      //std::cout << "Line part " <<x << std::endl;
+
+      pThis->AddRayCastLine(spitfire::math::cLine3(_ray.GetOrigin(), point));
+
+      const float fX0 = point.x - fHalfGridSize;
+      const float fZ0 = point.z - fHalfGridSize;
+      const spitfire::math::cVec3 point0(fX0, heightMapScale.y * heightMapData.GetHeight(fX0 / heightMapScale.x, fZ0 / heightMapScale.z), fZ0);
+
+      const float fX1 = point.x + fHalfGridSize;
+      const float fZ1 = point.z - fHalfGridSize;
+      const spitfire::math::cVec3 point1(fX1, heightMapScale.y * heightMapData.GetHeight(fX1 / heightMapScale.x, fZ1 / heightMapScale.z), fZ1);
+
+      const float fZ2 = point.z + fHalfGridSize;
+      const float fX2 = point.x - fHalfGridSize;
+      const spitfire::math::cVec3 point2(fX2, heightMapScale.y * heightMapData.GetHeight(fX2 / heightMapScale.x, fZ2 / heightMapScale.z), fZ2);
+
+      const float fX3 = point.x + fHalfGridSize;
+      const float fZ3 = point.z + fHalfGridSize;
+      const spitfire::math::cVec3 point3(fX3, heightMapScale.y * heightMapData.GetHeight(fX3 / heightMapScale.x, fZ3 / heightMapScale.z), fZ3);
+
+      pThis->AddRayCastLine(spitfire::math::cLine3(point0, point1));
+      pThis->AddRayCastLine(spitfire::math::cLine3(point1, point2));
+      pThis->AddRayCastLine(spitfire::math::cLine3(point2, point0));
+      pThis->AddRayCastLine(spitfire::math::cLine3(point2, point3));
+      pThis->AddRayCastLine(spitfire::math::cLine3(point3, point1));
+
+      if (_ray.CollideWithTriangle(point0, point1, point2, fDepth) || _ray.CollideWithTriangle(point1, point2, point3, fDepth) ||
+        _ray.CollideWithTriangle(point1, point0, point2, fDepth) || _ray.CollideWithTriangle(point2, point1, point3, fDepth)) {
+        const spitfire::durationms_t end = spitfire::util::GetTimeMS();
+        std::cout<<"Collision depth="<<fDepth<<std::endl;
+        std::cout<<(end - start)<<" ms"<<std::endl;
+        pThis->CreateRayCastLineStaticVertexBuffer();
+        return fDepth;
+      }
+
+      point += 0.1f * _ray.GetDirection();
+
+      x++;
+    }
+
+    i++;
   }
+
+  pThis->CreateRayCastLineStaticVertexBuffer();
+
+  const spitfire::durationms_t end = spitfire::util::GetTimeMS();
+  std::cout << (end - start) << " ms" << std::endl;
 
   // No collision, return an invalid depth
   return -1.0f;
@@ -960,12 +1037,16 @@ void cApplication::HandleSelectionAndOrders(int mouseX, int mouseY)
 
   // Collide with our heightmap
   const float fDepth = CollideRayWithHeightmap(ray);
+
   if (fDepth >= 0.0f) {
     // The heightmap was clicked on
     const spitfire::math::cVec3 point = origin + (direction * fDepth);
 
     // Add a ray
     AddRayCastLine(spitfire::math::cLine3(origin, point));
+
+    if (selectedObject != -1) scene.objects.goalPositions[selectedObject] = point;
+
     CreateRayCastLineStaticVertexBuffer();
   }
 }
@@ -1070,66 +1151,160 @@ std::vector<std::string> cApplication::GetInputDescription() const
   return description;
 }
 
+opengl::cGeometryDataPtr pGeometryDataRedRayLinesPtr = opengl::CreateGeometryData();
+
+opengl::cGeometryBuilder_v3_n3 builderRedRayTraceLines(*pGeometryDataRedRayLinesPtr);
+
+
+opengl::cGeometryDataPtr pGeometryDataGreenDebugLinesPtr = opengl::CreateGeometryData();
+
+opengl::cGeometryBuilder_v3_n3 builderGreenDebugLines(*pGeometryDataGreenDebugLinesPtr);
+
+void cApplication::CreateRayCastLineStaticVertexBuffer()
+{
+  // Recreate our ray casts vertex buffer object
+  if (staticVertexBufferObjectRayCasts.IsCompiled()) pContext->DestroyStaticVertexBufferObject(staticVertexBufferObjectRayCasts);
+
+  if (pGeometryDataRedRayLinesPtr->nVertexCount != 0) {
+    pContext->CreateStaticVertexBufferObject(staticVertexBufferObjectRayCasts);
+
+    staticVertexBufferObjectRayCasts.SetData(pGeometryDataRedRayLinesPtr);
+
+    staticVertexBufferObjectRayCasts.Compile();
+  }
+}
+
 void cApplication::AddRayCastLine(const spitfire::math::cLine3& line)
 {
-  // Add a ray
-  rayCastLines.push_back(line);
+  // TODO: Remove this normal
+  const spitfire::math::cVec3 normal;
+
+  // Add a ray to the geometry builder
+  builderRedRayTraceLines.PushBack(line.GetOrigin(), normal);
+  builderRedRayTraceLines.PushBack(line.GetDestination(), normal);
 }
 
-void cApplication::DebugAddOctreeLines()
-{
-  DebugAddOctreeLinesRecursive(*octree);
-
-  CreateRayCastLineStaticVertexBuffer();
-}
-
-void cApplication::DebugAddOctreeLinesRecursive(const spitfire::math::cOctree<spitfire::math::cAABB3>& node)
+void cApplication::DebugAddRayCastBox(const spitfire::math::cAABB3& aabb)
 {
   // Add 6 lines for the extents of this node
-  const spitfire::math::cVec3 min = node.GetMin();
-  const spitfire::math::cVec3 max = node.GetMax();
+  const spitfire::math::cVec3 min(aabb.GetMin());
+  const spitfire::math::cVec3 max(aabb.GetMax());
+
+  // Bottom
   AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, min.z), spitfire::math::cVec3(max.x, min.y, min.z)));
   AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, min.z), spitfire::math::cVec3(max.x, min.y, max.z)));
   AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, max.z), spitfire::math::cVec3(min.x, min.y, max.z)));
   AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, max.z), spitfire::math::cVec3(min.x, min.y, min.z)));
 
+  // Vertical lines
   AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, min.z), spitfire::math::cVec3(min.x, max.y, min.z)));
-  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, min.z), spitfire::math::cVec3(min.x, min.y, max.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, min.z), spitfire::math::cVec3(max.x, max.y, min.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, max.z), spitfire::math::cVec3(max.x, max.y, max.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, max.z), spitfire::math::cVec3(min.x, max.y, max.z)));
 
-  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, max.y, max.z), max));
-  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, max.z), max));
-  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, max.y, min.z), max));
+  // Top
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, max.y, min.z), spitfire::math::cVec3(max.x, max.y, min.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, max.y, min.z), spitfire::math::cVec3(max.x, max.y, max.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, max.y, max.z), spitfire::math::cVec3(min.x, max.y, max.z)));
+  AddRayCastLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, max.y, max.z), spitfire::math::cVec3(min.x, max.y, min.z)));
+}
 
-  // Add boxes for each of the child nodes
-  for (size_t i = 0; i < 8; i++) {
-    const spitfire::math::cOctree<spitfire::math::cAABB3>* child = node.GetChild(i);
-    if (child != nullptr) DebugAddOctreeLinesRecursive(*child);
+void cApplication::CreateGreenDebugLinesStaticVertexBuffer()
+{
+  // Recreate our vertex buffer object
+  if (staticVertexBufferGreenDebugTraceLines.IsCompiled()) pContext->DestroyStaticVertexBufferObject(staticVertexBufferGreenDebugTraceLines);
+
+  if (pGeometryDataGreenDebugLinesPtr->nVertexCount != 0) {
+    pContext->CreateStaticVertexBufferObject(staticVertexBufferGreenDebugTraceLines);
+
+    staticVertexBufferGreenDebugTraceLines.SetData(pGeometryDataGreenDebugLinesPtr);
+
+    staticVertexBufferGreenDebugTraceLines.Compile();
   }
 }
 
-void cApplication::CreateRayCastLineStaticVertexBuffer()
+void AddLineToBuilder(opengl::cGeometryBuilder_v3_n3& builder, const spitfire::math::cLine3& line)
 {
-  // Recreate our ray casts vertex buffer object
-  if (staticVertexBufferObjectGear0.IsCompiled()) pContext->DestroyStaticVertexBufferObject(staticVertexBufferObjectRayCasts);
-
-  pContext->CreateStaticVertexBufferObject(staticVertexBufferObjectRayCasts);
-
-  opengl::cGeometryDataPtr pGeometryDataPtr = opengl::CreateGeometryData();
-
-  opengl::cGeometryBuilder_v3_n3 builder(*pGeometryDataPtr);
-
   // TODO: Remove this normal
   const spitfire::math::cVec3 normal;
 
-  const size_t n = rayCastLines.size();
+  // Add a ray to the geometry builder
+  builder.PushBack(line.GetOrigin(), normal);
+  builder.PushBack(line.GetDestination(), normal);
+}
+
+void cApplication::CreateDebugTargetTraceLinesStaticVertexBuffer()
+{
+  opengl::cGeometryDataPtr pGeometryDataDebugTargetTraceLinesPtr = opengl::CreateGeometryData();
+
+  opengl::cGeometryBuilder_v3_n3 builder(*pGeometryDataDebugTargetTraceLinesPtr);
+
+  const size_t n = scene.objects.goalPositions.size();
   for (size_t i = 0; i < n; i++) {
-    builder.PushBack(rayCastLines[i].GetOrigin(), normal);
-    builder.PushBack(rayCastLines[i].GetDestination(), normal);
+    AddLineToBuilder(builder, spitfire::math::cLine3(scene.objects.positions[i], scene.objects.goalPositions[i]));
   }
 
-  staticVertexBufferObjectRayCasts.SetData(pGeometryDataPtr);
+  // Recreate our vertex buffer object
+  if (staticVertexBufferDebugTargetTraceLines.IsCompiled()) pContext->DestroyStaticVertexBufferObject(staticVertexBufferDebugTargetTraceLines);
 
-  staticVertexBufferObjectRayCasts.Compile();
+  if (pGeometryDataDebugTargetTraceLinesPtr->nVertexCount != 0) {
+    pContext->CreateStaticVertexBufferObject(staticVertexBufferDebugTargetTraceLines);
+
+    staticVertexBufferDebugTargetTraceLines.SetData(pGeometryDataDebugTargetTraceLinesPtr);
+
+    staticVertexBufferDebugTargetTraceLines.Compile();
+  }
+}
+
+void cApplication::AddGreenDebugLine(const spitfire::math::cLine3& line)
+{
+  // TODO: Remove this normal
+  const spitfire::math::cVec3 normal;
+
+  // Add a ray to the geometry builder
+  builderGreenDebugLines.PushBack(line.GetOrigin(), normal);
+  builderGreenDebugLines.PushBack(line.GetDestination(), normal);
+}
+
+void cApplication::DebugAddQuadtreeLines()
+{
+  DebugAddQuadtreeLinesRecursive(*quadtree);
+
+  CreateGreenDebugLinesStaticVertexBuffer();
+}
+
+void cApplication::DebugAddQuadtreeLinesRecursive(const spitfire::math::cQuadtree<spitfire::math::cAABB2>& node)
+{
+  const float fLowestPoint = heightMapData.GetLowestPoint();
+  const float fHighestPoint = heightMapData.GetHighestPoint();
+
+  // Add 6 lines for the extents of this node
+  const spitfire::math::cVec3 min(node.GetMin().x, heightMapScale.y * fLowestPoint, node.GetMin().y);
+  const spitfire::math::cVec3 max(node.GetMax().x, heightMapScale.y * fHighestPoint, node.GetMax().y);
+
+  // Bottom
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, min.z), spitfire::math::cVec3(max.x, min.y, min.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, min.z), spitfire::math::cVec3(max.x, min.y, max.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, max.z), spitfire::math::cVec3(min.x, min.y, max.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, max.z), spitfire::math::cVec3(min.x, min.y, min.z)));
+
+  // Vertical lines
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, min.z), spitfire::math::cVec3(min.x, max.y, min.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, min.z), spitfire::math::cVec3(max.x, max.y, min.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, min.y, max.z), spitfire::math::cVec3(max.x, max.y, max.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, min.y, max.z), spitfire::math::cVec3(min.x, max.y, max.z)));
+
+  // Top
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, max.y, min.z), spitfire::math::cVec3(max.x, max.y, min.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, max.y, min.z), spitfire::math::cVec3(max.x, max.y, max.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(max.x, max.y, max.z), spitfire::math::cVec3(min.x, max.y, max.z)));
+  AddGreenDebugLine(spitfire::math::cLine3(spitfire::math::cVec3(min.x, max.y, max.z), spitfire::math::cVec3(min.x, max.y, min.z)));
+
+  // Add boxes for each of the child nodes
+  for (size_t i = 0; i < 4; i++) {
+    const spitfire::math::cQuadtree<spitfire::math::cAABB2>* child = node.GetChild(i);
+    if (child != nullptr) DebugAddQuadtreeLinesRecursive(*child);
+  }
 }
 
 void cApplication::RenderFrame()
@@ -1225,7 +1400,7 @@ void cApplication::RenderFrame()
 
 
     if (staticVertexBufferDebugNavigationMesh.IsCompiled()) {
-      // Render our ray casts
+      // Render our debug navigation mesh
       pContext->BindShader(shaderColour);
 
       const spitfire::math::cColour green(0.0f, 1.0f, 0.0f);
@@ -1243,7 +1418,7 @@ void cApplication::RenderFrame()
     }
 
     if (staticVertexBufferDebugNavigationMeshWayPointLines.IsCompiled()) {
-      // Render our ray casts
+      // Render our debug navigation mesh way point lines
       pContext->BindShader(shaderColour);
 
       const spitfire::math::cColour darkGreen(0.0f, 0.5f, 0.0f);
@@ -1267,9 +1442,9 @@ void cApplication::RenderFrame()
       // Render our ray casts
       pContext->BindShader(shaderColour);
 
-      const spitfire::math::cColour green(0.0f, 1.0f, 0.0f);
-      
-      pContext->SetShaderConstant("colour", green);
+      const spitfire::math::cColour red(1.0f, 0.0f, 0.0f);
+
+      pContext->SetShaderConstant("colour", red);
 
       const spitfire::math::cMat4 matModel;
 
@@ -1280,6 +1455,48 @@ void cApplication::RenderFrame()
 
       pContext->UnBindShader(shaderColour);
     }
+
+
+    opengl::cSystem::GetErrorString();
+
+
+    if (staticVertexBufferGreenDebugTraceLines.IsCompiled()) {
+      // Render our green debug lines
+      pContext->BindShader(shaderColour);
+
+      const spitfire::math::cColour green(0.0f, 1.0f, 0.0f);
+
+      pContext->SetShaderConstant("colour", green);
+
+      const spitfire::math::cMat4 matModel;
+
+      pContext->BindStaticVertexBufferObject(staticVertexBufferGreenDebugTraceLines);
+      pContext->SetShaderProjectionAndViewAndModelMatrices(matProjection, matView, matModel);
+      pContext->DrawStaticVertexBufferObjectLines(staticVertexBufferGreenDebugTraceLines);
+      pContext->UnBindStaticVertexBufferObject(staticVertexBufferGreenDebugTraceLines);
+
+      pContext->UnBindShader(shaderColour);
+    }
+
+    if (staticVertexBufferDebugTargetTraceLines.IsCompiled()) {
+      // Render our red debug target trace lines
+      pContext->BindShader(shaderColour);
+
+      const spitfire::math::cColour red(1.0f, 0.0f, 0.0f);
+
+      pContext->SetShaderConstant("colour", red);
+
+      const spitfire::math::cMat4 matModel;
+
+      pContext->BindStaticVertexBufferObject(staticVertexBufferDebugTargetTraceLines);
+      pContext->SetShaderProjectionAndViewAndModelMatrices(matProjection, matView, matModel);
+      pContext->DrawStaticVertexBufferObjectLines(staticVertexBufferDebugTargetTraceLines);
+      pContext->UnBindStaticVertexBufferObject(staticVertexBufferDebugTargetTraceLines);
+
+      pContext->UnBindShader(shaderColour);
+    }
+
+    
 
 
     opengl::cSystem::GetErrorString();
@@ -1479,7 +1696,7 @@ void cApplication::Run()
 
     if ((currentTime - previousUpdateTime) > uiUpdateDelta) {
       // Update the camera
-      const float fDistance = 0.1f;
+      const float fDistance = 0.3f;
       if (moveCameraForward.bDown) camera.MoveZ(fDistance);
       if (moveCameraBack.bDown) camera.MoveZ(-fDistance);
       if (moveCameraLeft.bDown) camera.MoveX(-fDistance);
@@ -1489,8 +1706,32 @@ void cApplication::Run()
       if (bIsPhysicsRunning) {
         currentSimulationTime++;
 
-        // TODO: Update objects
+        // Update objects
+        const float fSpeed = 0.1f;
+        const size_t n = scene.objects.goalPositions.size();
+        for (size_t i = 0; i < n; i++) {
+          const float fDistance = spitfire::math::cVec3(scene.objects.goalPositions[i] - scene.objects.positions[i]).GetLength();
+          if (fDistance < 0.1f) {
+            // Close enough to just move the object to the target position
+            scene.objects.positions[i] = scene.objects.goalPositions[i];
+          } else if (fDistance < 6.0f) {
+            // Ease into the target position
+            float fEasing = 0.1f;
+            const spitfire::math::cVec3 direction = (scene.objects.goalPositions[i] - scene.objects.positions[i]).GetNormalised();
+            scene.objects.positions[i] += std::min(fSpeed, (fEasing * fDistance)) * direction;
+          } else {
+            // Move at a constant speed to the target position
+            const spitfire::math::cVec3 direction = (scene.objects.goalPositions[i] - scene.objects.positions[i]).GetNormalised();
+            scene.objects.positions[i] += fSpeed * direction;
+          }
+
+          // Keep our object on the heightmap
+          scene.objects.positions[i].y = heightMapScale.y * heightMapData.GetHeight(scene.objects.positions[i].x / heightMapScale.x, scene.objects.positions[i].z / heightMapScale.z);
+        }
       }
+
+      // Update our debug lines
+      CreateDebugTargetTraceLinesStaticVertexBuffer();
 
       previousUpdateTime = currentTime;
     }
