@@ -467,7 +467,7 @@ void cApplication::CreateScene()
 
         // Soldiers have AI agents
         const aiagentid_t id = ai.AddAgent(randomPosition, rotation);
-        ai.SetAgentGoalPosition(id, randomGoalPosition);
+        ai.AddAgentGoal(id, new AIGoalTakeControlPoint(randomGoalPosition));
 
         scene.objects.aiagentids[i] = id;
         break;
@@ -1056,7 +1056,7 @@ void cApplication::HandleSelectionAndOrders(int mouseX, int mouseY)
 
     if (selectedObject != -1) {
       auto iter = scene.objects.aiagentids.find(selectedObject);
-      if (iter != scene.objects.aiagentids.end()) ai.SetAgentGoalPosition(iter->second, point);
+      if (iter != scene.objects.aiagentids.end()) ai.AddAgentGoal(iter->second, new AIGoalTakeControlPoint(point));
     }
 
     CreateRayCastLineStaticVertexBuffer();

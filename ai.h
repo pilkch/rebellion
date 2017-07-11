@@ -1,6 +1,7 @@
 #ifndef AI_H
 #define AI_H
 
+#include <list>
 #include <map>
 #include <memory>
 
@@ -12,6 +13,57 @@ class NavigationMesh;
 
 typedef uint16_t aiagentid_t;
 
+class AISystem;
+struct AIAgent;
+
+class AIGoal {
+public:
+  virtual bool IsSatisfied(const AISystem& ai, const AIAgent& agent) const = 0;
+};
+
+class AIGoalTakeControlPoint : public AIGoal {
+public:
+  explicit AIGoalTakeControlPoint(const spitfire::math::cVec3& controlPointPosition);
+
+  virtual bool IsSatisfied(const AISystem& ai, const AIAgent& agent) const override;
+
+  spitfire::math::cVec3 controlPointPosition;
+};
+
+class AIGoalTakeCover : public AIGoal {
+};
+
+class AIGoalReloadWeapon : public AIGoal {
+};
+
+class AIState {
+public:
+  virtual ~AIState() {}
+
+  virtual void Update(const AISystem& ai, AIAgent& agent) = 0;
+};
+
+class AIStateGoto : public AIState {
+public:
+  explicit AIStateGoto(const spitfire::math::cVec3& _targetPosition) :
+    targetPosition(_targetPosition)
+  {
+  }
+
+private:
+  virtual void Update(const AISystem& ai, AIAgent& agent) override;
+
+  spitfire::math::cVec3 targetPosition;
+};
+
+class AIStateAnimate : public AIState {
+public:
+
+private:
+  virtual void Update(const AISystem& ai, AIAgent& agent) override;
+};
+
+
 struct AIAgent {
   explicit AIAgent(const spitfire::math::cVec3& position, const spitfire::math::cQuaternion& rotation);
 
@@ -19,7 +71,8 @@ struct AIAgent {
   spitfire::math::cQuaternion rotation;
 
   struct Blackboard {
-    std::unique_ptr<spitfire::math::cVec3> goalPosition;
+    std::list<AIGoal*> goals;
+    std::list<AIState*> states;
   };
   Blackboard blackboard;
 };
@@ -35,7 +88,7 @@ public:
   void SetAgentPositionAndRotation(aiagentid_t id, const spitfire::math::cVec3& position, const spitfire::math::cQuaternion& rotation);
 
   bool GetAgentGoalPosition(aiagentid_t id, spitfire::math::cVec3& goalPosition) const;
-  void SetAgentGoalPosition(aiagentid_t id, const spitfire::math::cVec3& goalPosition);
+  void AddAgentGoal(aiagentid_t id, AIGoal* pGoal);
 
   void Update(spitfire::durationms_t currentSimulationTime);
 
