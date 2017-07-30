@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "ai.h"
+#include "navigation.h"
 
 AIGoalTakeControlPoint::AIGoalTakeControlPoint(const spitfire::math::cVec3& _controlPointPosition) :
   controlPointPosition(_controlPointPosition)
@@ -16,23 +17,36 @@ bool AIGoalTakeControlPoint::IsSatisfied(const AISystem& ai, const AIAgent& agen
 }
 
 
-void AIStateGoto::Update(const AISystem& ai, AIAgent& agent)
+void AIActionGoto::Update(const AISystem& ai, AIAgent& agent)
 {
+  spitfire::math::cVec3 target = targetPosition;
+
+  // If we have a path to move along get the first node and move to it first
+  if (!path.empty()) {
+    target = path.front().position;
+  }
+
+
   // Update agent
   const float fSpeed = 0.1f;
   spitfire::math::cVec3& position(agent.position);
-  const float fDistance = spitfire::math::cVec3(targetPosition - position).GetLength();
-  if (fDistance < 0.1f) {
+  const float fDistance = spitfire::math::cVec3(target - position).GetLength();
+  if (fDistance < 2.0f) {
     // Close enough to just move the agent to the target position
-    position = targetPosition;
+    position = target;
+
+    // We are now at the first path node, so pop it to move onto the next one
+    if (!path.empty()) {
+      path.pop_front();
+    }
   } else if (fDistance < 6.0f) {
     // Ease into the target position
     float fEasing = 0.1f;
-    const spitfire::math::cVec3 direction = (targetPosition - position).GetNormalised();
+    const spitfire::math::cVec3 direction = (target - position).GetNormalised();
     position += std::min(fSpeed, (fEasing * fDistance)) * direction;
   } else {
     // Move at a constant speed to the target position
-    const spitfire::math::cVec3 direction = (targetPosition - position).GetNormalised();
+    const spitfire::math::cVec3 direction = (target - position).GetNormalised();
     position += fSpeed * direction;
   }
 }
@@ -134,31 +148,31 @@ void AISystem::Update(spitfire::durationms_t currentSimulationTime)
       agent.blackboard.goals.remove(pGoal);
     }
 
-    // HACK: If we removed any goals then remove all our states
+    // HACK: If we removed any goals then remove all our actions
     if ((nGoalsBefore - agent.blackboard.goals.size()) != 0) {
-      // Delete all states
-      for (auto& pState : agent.blackboard.states) {
-        delete pState;
+      // Delete all actions
+      for (auto& pAction : agent.blackboard.actions) {
+        delete pAction;
       }
 
-      // Remove all states
-      agent.blackboard.states.clear();
+      // Remove all actions
+      agent.blackboard.actions.clear();
     }
 
     // No goals any more, nothing to do
     if (agent.blackboard.goals.empty()) continue;
 
-    // If we don't have a state yet then we need to work out which state can satisfy our primary goal and add it
-    if (agent.blackboard.states.empty()) {
-      // TODO: Work out which states satisfy our goals and add them
+    // If we don't have an action yet then we need to work out which action can satisfy our primary goal and add it
+    if (agent.blackboard.actions.empty()) {
+      // TODO: Work out which actions satisfy our goals and add them
 
       AIGoal* pGoal = *(agent.blackboard.goals.begin());
       AIGoalTakeControlPoint* pGoalTakeControlPoint = (AIGoalTakeControlPoint*)pGoal;
       agent.blackboard.states.push_back(new AIStateGoto(pGoalTakeControlPoint->controlPointPosition));
     }
 
-    for (auto pState : agent.blackboard.states) {
-      pState->Update(*this, agent);
+    for (auto pAction : agent.blackboard.actions) {
+      pAction->Update(*this, agent);
     }
   }
 }

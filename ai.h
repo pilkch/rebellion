@@ -36,16 +36,17 @@ class AIGoalTakeCover : public AIGoal {
 class AIGoalReloadWeapon : public AIGoal {
 };
 
-class AIState {
+class AIAction {
 public:
-  virtual ~AIState() {}
+  virtual ~AIAction() {}
 
   virtual void Update(const AISystem& ai, AIAgent& agent) = 0;
 };
 
-class AIStateGoto : public AIState {
+class AIActionGoto : public AIAction {
 public:
-  explicit AIStateGoto(const spitfire::math::cVec3& _targetPosition) :
+  explicit AIActionGoto(const std::list<Node>& _path, const spitfire::math::cVec3& _targetPosition) :
+    path(_path),
     targetPosition(_targetPosition)
   {
   }
@@ -53,10 +54,11 @@ public:
 private:
   virtual void Update(const AISystem& ai, AIAgent& agent) override;
 
+  std::list<Node> path;
   spitfire::math::cVec3 targetPosition;
 };
 
-class AIStateAnimate : public AIState {
+class AIActionAnimate : public AIAction {
 public:
 
 private:
@@ -72,7 +74,7 @@ struct AIAgent {
 
   struct Blackboard {
     std::list<AIGoal*> goals;
-    std::list<AIState*> states;
+    std::list<AIAction*> actions;
   };
   Blackboard blackboard;
 };
