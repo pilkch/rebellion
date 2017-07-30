@@ -9,6 +9,7 @@
 #include <spitfire/math/cVec3.h>
 #include <spitfire/math/cQuaternion.h>
 
+struct Node;
 class NavigationMesh;
 
 typedef uint16_t aiagentid_t;
@@ -19,6 +20,7 @@ struct AIAgent;
 class AIGoal {
 public:
   virtual bool IsSatisfied(const AISystem& ai, const AIAgent& agent) const = 0;
+  virtual void Update(const AISystem& ai, const AIAgent& agent) {}
 };
 
 class AIGoalTakeControlPoint : public AIGoal {
@@ -34,6 +36,16 @@ class AIGoalTakeCover : public AIGoal {
 };
 
 class AIGoalReloadWeapon : public AIGoal {
+};
+
+class AIGoalPatrol : public AIGoal {
+public:
+  explicit AIGoalPatrol(const std::list<spitfire::math::cVec3>& patrolPoints);
+
+  virtual bool IsSatisfied(const AISystem& ai, const AIAgent& agent) const override;
+  virtual void Update(const AISystem& ai, const AIAgent& agent) override;
+
+  std::list<spitfire::math::cVec3> patrolPoints;
 };
 
 class AIAction {
@@ -88,6 +100,9 @@ public:
 
   const spitfire::math::cVec3& GetAgentPosition(aiagentid_t id) const;
   void SetAgentPositionAndRotation(aiagentid_t id, const spitfire::math::cVec3& position, const spitfire::math::cQuaternion& rotation);
+
+  size_t GetAgentGoalCount(aiagentid_t id) const;
+  size_t GetAgentActionCount(aiagentid_t id) const;
 
   bool GetAgentGoalPosition(aiagentid_t id, spitfire::math::cVec3& goalPosition) const;
   void AddAgentGoal(aiagentid_t id, AIGoal* pGoal);

@@ -69,6 +69,8 @@ public:
   const Edge& GetEdge(size_t index) const { return edges[index]; }
   Edge& GetEdge(size_t index) { return edges[index]; }
 
+  const Node* GetClosestNodeToPoint(const spitfire::math::cVec3& position) const;
+
 private:
   std::vector<Node> nodes;
   std::vector<Edge> edges;

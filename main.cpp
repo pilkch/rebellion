@@ -225,9 +225,12 @@ void cApplication::CreateText()
   if (selectedObject >= 0) {
     const spitfire::math::cVec3 position = scene.objects.positions[selectedObject];
     lines.push_back(spitfire::string_t(TEXT("Object: ")) + spitfire::string::ToString(position.x) + TEXT(", ") + spitfire::string::ToString(position.y) + TEXT(", ") + spitfire::string::ToString(position.z));
-    
+
     auto iter = scene.objects.aiagentids.find(selectedObject);
     if (iter != scene.objects.aiagentids.end()) {
+      lines.push_back(spitfire::string_t(TEXT("Object goal count: ")) + spitfire::string::ToString(ai.GetAgentGoalCount(iter->second)));
+      lines.push_back(spitfire::string_t(TEXT("Object action count: ")) + spitfire::string::ToString(ai.GetAgentActionCount(iter->second)));
+
       spitfire::math::cVec3 goal;
       if (ai.GetAgentGoalPosition(iter->second, goal)) {
         const float fDistance = (goal - position).GetLength();

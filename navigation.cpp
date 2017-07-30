@@ -22,3 +22,20 @@ void NavigationMesh::SetNodesAndEdges(const std::vector<spitfire::math::cVec3>& 
     nodes[_edges[i].first].edges.push_back(edge);
   }
 }
+
+const Node* NavigationMesh::GetClosestNodeToPoint(const spitfire::math::cVec3& position) const
+{
+  float fClosestSquaredDistance = spitfire::math::cINFINITY;
+  const Node* pClosestNode = nullptr;
+
+  for (auto& node : nodes) {
+    const float fSquaredDistance = (position - node.position).GetSquaredLength();
+    if (fSquaredDistance < fClosestSquaredDistance) {
+      fClosestSquaredDistance = fSquaredDistance;
+      pClosestNode = &node;
+    }
+  }
+
+  return pClosestNode;
+}
+

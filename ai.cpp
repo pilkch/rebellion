@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "ai.h"
+#include "astar.h"
 #include "navigation.h"
 
 AIGoalTakeControlPoint::AIGoalTakeControlPoint(const spitfire::math::cVec3& _controlPointPosition) :
@@ -14,6 +15,30 @@ bool AIGoalTakeControlPoint::IsSatisfied(const AISystem& ai, const AIAgent& agen
 {
   const float fRadius = 1.0f;
   return (agent.position - controlPointPosition).GetLength() < fRadius;
+}
+
+
+AIGoalPatrol::AIGoalPatrol(const std::list<spitfire::math::cVec3>& _patrolPoints) :
+  patrolPoints(_patrolPoints)
+{
+}
+
+bool AIGoalPatrol::IsSatisfied(const AISystem& ai, const AIAgent& agent) const
+{
+  return patrolPoints.empty();
+}
+
+void AIGoalPatrol::Update(const AISystem& ai, const AIAgent& agent)
+{
+  if (!patrolPoints.empty()) {
+    // Check if we are close enough to the next patrol point to be able to count it as visited
+    auto&& point = patrolPoints.front();
+    const float fRadius = 1.0f;
+    if ((agent.position - point).GetLength() < fRadius) {
+      // We were close enough to the first patrol point so we can remove it
+      patrolPoints.pop_front();
+    }
+  }
 }
 
 
@@ -99,6 +124,22 @@ void AISystem::SetAgentPositionAndRotation(aiagentid_t id, const spitfire::math:
   }
 }
 
+size_t AISystem::GetAgentGoalCount(aiagentid_t id) const
+{
+  auto iter = agents.find(id);
+  if (iter != agents.end()) return iter->second->blackboard.goals.size();
+
+  return 0;
+}
+
+size_t AISystem::GetAgentActionCount(aiagentid_t id) const
+{
+  auto iter = agents.find(id);
+  if (iter != agents.end()) return iter->second->blackboard.actions.size();
+
+  return 0;
+}
+
 bool AISystem::GetAgentGoalPosition(aiagentid_t id, spitfire::math::cVec3& goalPosition) const
 {
   auto iter = agents.find(id);
@@ -166,9 +207,28 @@ void AISystem::Update(spitfire::durationms_t currentSimulationTime)
     if (agent.blackboard.actions.empty()) {
       // TODO: Work out which actions satisfy our goals and add them
 
+      const Node* pNodeFrom = navigationMesh.GetClosestNodeToPoint(agent.position);
+      ASSERT(pNodeFrom != nullptr);
+
       AIGoal* pGoal = *(agent.blackboard.goals.begin());
       AIGoalTakeControlPoint* pGoalTakeControlPoint = (AIGoalTakeControlPoint*)pGoal;
-      agent.blackboard.states.push_back(new AIStateGoto(pGoalTakeControlPoint->controlPointPosition));
+
+      const Node* pNodeTo = navigationMesh.GetClosestNodeToPoint(pGoalTakeControlPoint->controlPointPosition);
+      ASSERT(pNodeTo != nullptr);
+
+      std::list<Node> path;
+
+      // If our starting node is not the same node as our end node then we need to find out the path between them
+      if ((pNodeFrom != nullptr) && (pNodeTo != nullptr) && (pNodeFrom != pNodeTo)) {
+        astar::config<Node> cfg;
+        cfg.node_limit = 1000;
+        cfg.cost_limit = 1000;
+        cfg.route_cost = 0.0f;
+
+        astar::astar(*pNodeFrom, *pNodeTo, path, &astar::straight_distance_heuristic<Node>, cfg);
+      }
+
+      agent.blackboard.actions.push_back(new AIActionGoto(path, pGoalTakeControlPoint->controlPointPosition));
     }
 
     for (auto pAction : agent.blackboard.actions) {
