@@ -78,6 +78,41 @@ private:
 };
 
 
+class AIActionLookAtPoint : public AIAction {
+public:
+  explicit AIActionLookAtPoint(const spitfire::math::cVec3& _targetPosition) :
+    targetPosition(_targetPosition)
+  {
+  }
+
+private:
+  virtual void Update(const AISystem& ai, AIAgent& agent) override;
+
+  /*
+  // Look at a our target point
+  LTVector vDir = targetPosition - ai.GetPosition();
+  vDir.Normalize();
+
+  if ( vDir.Dot( ai.GetForwardVector() ) < 0.f ) {
+    // The target is in front of us, so look at it
+    animProps.Set( kAPG_Action, kAP_ACT_Alert );
+    pAI->GetAIBlackBoard()->SetBBFacePos( vTargetPos );
+  } else if ( vDir.Dot( ai.GetForwardVector() ) > c_fFOV60 ) {
+  animProps.Set( kAPG_Action, kAP_ACT_Alert );
+  } else if ( vDir.Dot( ai.GetRightVector() ) > 0.0f ) {
+    // The target is to the right so turn to the right
+    animProps.Set( kAPG_Action, kAP_ACT_LookRight );
+  } else {
+    // The target is to the left so turn to the left
+    animProps.Set( kAPG_Action, kAP_ACT_LookLeft );
+  }
+  */
+
+  spitfire::math::cVec3 targetPosition;
+};
+
+
+
 struct AIAgent {
   explicit AIAgent(const spitfire::math::cVec3& position, const spitfire::math::cQuaternion& rotation);
 
